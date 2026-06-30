@@ -605,7 +605,11 @@ def execute_searches(queries: List[Dict], max_results_per_query: int = 5,
                 if region:
                     kwargs["region"] = region
 
-                results = ddgs.text(query, **kwargs)
+                results = ddgs.text(
+    query,
+    **kwargs,
+    backend="duckduckgo"
+)
                 for r in results:
                     url = r.get("href", "")
                     title = r.get("title", "")
@@ -625,7 +629,11 @@ def execute_searches(queries: List[Dict], max_results_per_query: int = 5,
                 # Retry without region if region caused issues
                 if region:
                     try:
-                        results = ddgs.text(query, max_results=max_results_per_query)
+                        results = ddgs.text(
+    query,
+    max_results=max_results_per_query,
+    backend="duckduckgo"
+)
                         for r in results:
                             url = r.get("href", "")
                             title = r.get("title", "")
