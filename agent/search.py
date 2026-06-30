@@ -21,6 +21,8 @@ import re
 import logging
 from typing import List, Dict, Optional
 from ddgs import DDGS
+import requests
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -626,6 +628,7 @@ def execute_searches(queries: List[Dict], max_results_per_query: int = 5,
                         })
             except Exception as e:
                 logger.warning(f"Search failed for query '{query}': {e}")
+                results = fallback_search(query, max_results_per_query)
                 # Retry without region if region caused issues
                 if region:
                     try:
@@ -815,3 +818,32 @@ def filter_relevant_urls(search_results: List[Dict], customer_info: Dict) -> Lis
 
     logger.info(f"Filtered to {len(filtered)} relevant URLs (from {len(search_results)})")
     return filtered
+
+
+def fallback_search(query, max_results=5):
+    url = "https://html.duckduckgo.com/html/"
+    try:
+        r = requests.post(
+            url,
+            data={"q": query},
+            timeout=10,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
+        )
+
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        results = []
+
+        for a in soup.select(".result__a")[:max_results]:
+            results.append({
+                "url": a.get("href", ""),
+                "title": a.get_text(),
+                "description": ""
+            })
+
+        return results
+
+    except Exception:
+        return []
