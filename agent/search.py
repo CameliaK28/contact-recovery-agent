@@ -581,89 +581,90 @@ def build_secondary_searches(customer_info: Dict, discovered_handles: List[str],
 
 def execute_searches(queries: List[Dict], max_results_per_query: int = 5,
                      address: str = "") -> List[Dict]:
-    """
-    Step 2: Execute multi-channel searches.
 
-    Returns a list of search results with URL, title, description, and channel info.
-    Uses region parameter based on customer's address country.
-    """
     all_results = []
     seen_urls = set()
 
-    # Determine region from address
-    region = _get_region(address) if address else ""
+    for query_config in queries:
 
-    with DDGS() as ddgs:
-        for query_config in queries:
-            query = query_config["query"]
-            channel = query_config["channel"]
-            priority = query_config["priority"]
+        query = query_config["query"]
+        channel = query_config["channel"]
+        priority = query_config["priority"]
 
-            logger.info(f"Searching [{channel}]: {query}")
+        logger.info(f"Searching [{channel}]: {query}")
 
-            try:
-                # Use region parameter if available
-                kwargs = {"max_results": max_results_per_query}
-                if region:
-                    kwargs["region"] = region
+        results = []
 
-                results = ddgs.text(
-    query,
-    **kwargs,
-    backend="duckduckgo"
-)
-                for r in results:
-                    url = r.get("href", "")
-                    title = r.get("title", "")
-                    desc = r.get("body", "")
-                    if url and url not in seen_urls:
-                        seen_urls.add(url)
-                        all_results.append({
-                            "url": url,
-                            "title": title,
-                            "description": desc,
-                            "channel": channel,
-                            "priority": priority,
-                            "query": query
-                        })
-            except Exception as e:
-                logger.warning(f"Search failed for query '{query}': {e}")
-                results = fallback_search(query, max_results_per_query)
-                # Retry without region if region caused issues
-                if region:
-                    try:
-                        results = ddgs.text(
-    query,
-    max_results=max_results_per_query,
-    backend="duckduckgo"
-)
-                        for r in results:
-                            url = r.get("href", "")
-                            title = r.get("title", "")
-                            desc = r.get("body", "")
-                            if url and url not in seen_urls:
-                                seen_urls.add(url)
-                                all_results.append({
-                                    "url": url,
-                                    "title": title,
-                                    "description": desc,
-                                    "channel": channel,
-                                    "priority": priority,
-                                    "query": query
-                                })
-                    except Exception as e2:
-                        logger.warning(f"Retry without region also failed for '{query}': {e2}")
-                        continue
+        # 1. DuckDuckGo
+        try:
+            with DDGS() as ddgs:
+                results = list(
+                    ddgs.text(
+                        query,
+                        max_results=max_results_per_query
+                    )
+                )
+        except Exception as e:
+            logger.warning(f"DDGS failed: {e}")
 
-    # Sort by priority (lower = higher priority)
-    all_results.sort(key=lambda x: x["priority"])
 
-    # Limit total results
-    max_total = 30
-    if len(all_results) > max_total:
-        all_results = all_results[:max_total]
+        # 2. fallback HTML search
+        if not results:
+            results = fallback_search(
+                query,
+                max_results_per_query
+            )
 
-    logger.info(f"Total unique URLs found: {len(all_results)}")
+
+        # 3. 更宽搜索
+        if not results:
+            simple_query = (
+                query
+                .replace('"','')
+                .replace('official website','')
+                .replace('contact','')
+            )
+
+            logger.info(
+                f"Retry broad search: {simple_query}"
+            )
+
+            results = fallback_search(
+                simple_query,
+                max_results_per_query
+            )
+
+
+        for r in results:
+
+            url = r.get("href") or r.get("url","")
+
+            if not url:
+                continue
+
+            if url in seen_urls:
+                continue
+
+            seen_urls.add(url)
+
+            all_results.append({
+                "url": url,
+                "title": r.get("title",""),
+                "description": r.get("body",""),
+                "channel": channel,
+                "priority": priority,
+                "query": query
+            })
+
+
+    all_results.sort(
+        key=lambda x:x["priority"]
+    )
+
+    logger.info(
+        f"Total unique URLs found: {len(all_results)}"
+    )
+
     return all_results
 
 
